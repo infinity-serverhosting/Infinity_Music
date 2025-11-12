@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { Client, GatewayIntentBits, Collection, REST, Routes, ActivityType } from 'discord.js';
 import { Player } from 'discord-player';
 import { readdirSync } from 'fs';
@@ -6,6 +7,7 @@ import { dirname, join } from 'path';
 import chalk from 'chalk';
 import { loadSettings, saveSettings } from './utils/settings.js';
 import { joinVoiceChannel } from '@discordjs/voice';
+import ffmpegPath from 'ffmpeg-static';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -22,8 +24,12 @@ client.commands = new Collection();
 client.player = new Player(client, {
   ytdlOptions: {
     quality: 'highestaudio',
-    highWaterMark: 1 << 25
-  }
+    highWaterMark: 1 << 25,
+    filter: 'audioonly',
+    dlChunkSize: 0
+  },
+  skipFFmpeg: false,
+  ffmpegPath: ffmpegPath
 });
 
 console.log(chalk.blue('🎵 Discord Music Bot wird gestartet...'));
@@ -54,7 +60,7 @@ async function join24_7Channels() {
   }
 
   console.log(chalk.cyan('\n🔄 Verbinde zu 24/7 Channels...'));
-  
+
   for (const [guildId, channelIds] of Object.entries(settings.channels)) {
     const guild = client.guilds.cache.get(guildId);
     if (!guild) continue;
@@ -80,10 +86,10 @@ async function join24_7Channels() {
 
 client.once('ready', async () => {
   const settings = loadSettings();
-  
+
   console.log(chalk.green.bold(`\n✓ Bot ist online als ${client.user.tag}`));
   console.log(chalk.cyan(`📊 In ${client.guilds.cache.size} Servern`));
-  
+
   if (settings.botName && settings.botName !== 'Music Bot') {
     try {
       await client.user.setUsername(settings.botName);
@@ -92,24 +98,24 @@ client.once('ready', async () => {
       console.log(chalk.red('⚠ Name konnte nicht geändert werden (Rate Limit)'));
     }
   }
-  
+
   client.user.setActivity('🎵 Musik | /play', { type: ActivityType.Listening });
-  
+
   const token = process.env.DISCORD_TOKEN;
   const clientId = process.env.DISCORD_CLIENT_ID;
-  
+
   if (clientId) {
     try {
       const rest = new REST({ version: '10' }).setToken(token);
       const commands = Array.from(client.commands.values()).map(cmd => cmd.data.toJSON());
-      
+
       console.log(chalk.blue(`\n🔄 Registriere ${commands.length} Slash Commands...`));
-      
+
       await rest.put(
         Routes.applicationCommands(clientId),
         { body: commands }
       );
-      
+
       console.log(chalk.green('✓ Slash Commands erfolgreich registriert!\n'));
     } catch (error) {
       console.error(chalk.red('❌ Fehler beim Registrieren der Commands:'), error);
@@ -134,11 +140,11 @@ client.player.events.on('playerStart', (queue, track) => {
   const settings = loadSettings();
   const guildId = queue.guild.id;
   const isIn24_7Mode = settings.channels && settings.channels[guildId] && settings.channels[guildId].length > 0;
-  
+
   if (isIn24_7Mode) {
     queue.node.setVolume(80);
   }
-  
+
   console.log(chalk.green(`▶️ Jetzt spielend: ${track.title} in ${queue.guild.name}`));
 });
 
@@ -146,10 +152,10 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
   if (newState.id === client.user.id && !newState.channelId && oldState.channelId) {
     const settings = loadSettings();
     const guildId = oldState.guild.id;
-    
+
     if (settings.channels && settings.channels[guildId] && settings.channels[guildId].includes(oldState.channelId)) {
       console.log(chalk.yellow(`⚠ Aus 24/7 Channel disconnected, reconnecting...`));
-      
+
       setTimeout(async () => {
         const channel = oldState.guild.channels.cache.get(oldState.channelId);
         if (channel && channel.isVoiceBased()) {
